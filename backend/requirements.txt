@@ -1,3 +1,1 @@
-
-fastapi
-uvicorn
+-r ../requirements.txt

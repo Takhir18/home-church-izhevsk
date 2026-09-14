@@ -3,78 +3,19 @@ import asyncio
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+
+from data import CHURCHES
+from webapp import register_webapp_routes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+PUBLIC_URL = (os.getenv("WEB_APP_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN environment variable is not set")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-CHURCHES = [
-    {
-        "id": 1,
-        "name": "Источник",
-        "leader": "Алексей Смирнов",
-        "leader_username": "alex_source_test",
-        "district": "Устиновский район",
-        "address": "ул. Молодёжная, 45",
-        "meeting": "Воскресенье, 18:00",
-        "age": "25–35 лет",
-        "participants": 14,
-        "interests": "Общение · Семьи · Изучение Библии",
-        "description": "Тёплая открытая группа для общения, молитвы, изучения Библии и поддержки друг друга.",
-        "lat": 56.8468,
-        "lon": 53.2812,
-    },
-    {
-        "id": 2,
-        "name": "Надежда",
-        "leader": "Иван Петров",
-        "leader_username": "ivan_nadezhda_test",
-        "district": "Октябрьский район",
-        "address": "ул. Пушкинская, 210",
-        "meeting": "Суббота, 17:00",
-        "age": "35–45 лет",
-        "participants": 10,
-        "interests": "Семьи · Общение · Поддержка",
-        "description": "Спокойная семейная группа, где люди знакомятся, молятся вместе и поддерживают друг друга.",
-        "lat": 56.8654,
-        "lon": 53.2055,
-    },
-    {
-        "id": 3,
-        "name": "Живое сердце",
-        "leader": "Мария Волкова",
-        "leader_username": "maria_heart_test",
-        "district": "Первомайский район",
-        "address": "ул. Ленина, 98",
-        "meeting": "Воскресенье, 16:00",
-        "age": "18–30 лет",
-        "participants": 18,
-        "interests": "Молодёжь · Творчество · Поездки",
-        "description": "Активная группа для молодых людей, которые хотят дружить, расти духовно и служить вместе.",
-        "lat": 56.8421,
-        "lon": 53.2309,
-    },
-    {
-        "id": 4,
-        "name": "Свет",
-        "leader": "Дмитрий Орлов",
-        "leader_username": "dmitry_svet_test",
-        "district": "Индустриальный район",
-        "address": "Воткинское шоссе, 34",
-        "meeting": "Среда, 19:00",
-        "age": "40+",
-        "participants": 8,
-        "interests": "Общение · Библия · Помощь людям",
-        "description": "Небольшая группа для близкого общения, молитвы и совместного изучения Библии.",
-        "lat": 56.8840,
-        "lon": 53.2440,
-    },
-]
 
 DISTRICTS = [
     "Все районы",
@@ -87,16 +28,22 @@ DISTRICTS = [
 
 
 def main_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
+    rows = []
+    if PUBLIC_URL:
+        rows.append([InlineKeyboardButton(text="🗺 Открыть карту и каталог", web_app=WebAppInfo(url=f"{PUBLIC_URL}/app"))])
+    rows += [
         [InlineKeyboardButton(text="🏠 Найти домашнюю церковь", callback_data="churches")],
         [InlineKeyboardButton(text="📍 По району", callback_data="districts")],
         [InlineKeyboardButton(text="ℹ️ Что такое домашняя церковь", callback_data="about")],
-    ])
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def churches_keyboard(churches):
     rows = [[InlineKeyboardButton(text=f"🏠 {c['name']} · {c['district'].replace(' район','')}", callback_data=f"church:{c['id']}")] for c in churches]
     rows.append([InlineKeyboardButton(text="🔎 Фильтр по району", callback_data="districts")])
+    if PUBLIC_URL:
+        rows.append([InlineKeyboardButton(text="🗺 Открыть карту", web_app=WebAppInfo(url=f"{PUBLIC_URL}/app"))])
     rows.append([InlineKeyboardButton(text="⬅️ На главную", callback_data="home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -118,6 +65,7 @@ def church_keyboard(church):
 
 
 def church_text(church):
+    interests = " · ".join(church["interests"])
     return (
         f"🏠 <b>Домашняя церковь «{church['name']}»</b>\n\n"
         f"📍 <b>Район:</b> {church['district']}\n"
@@ -127,7 +75,7 @@ def church_text(church):
         f"👥 <b>Участников:</b> {church['participants']}\n"
         f"🎂 <b>Средний возраст:</b> {church['age']}\n\n"
         f"<b>О группе</b>\n{church['description']}\n\n"
-        f"❤️ <b>Интересы:</b> {church['interests']}"
+        f"❤️ <b>Интересы:</b> {interests}"
     )
 
 
@@ -160,7 +108,10 @@ async def about(callback: types.CallbackQuery):
         "<b>Что такое домашняя церковь?</b>\n\n"
         "Это небольшая духовная семья, где люди встречаются, общаются, молятся, изучают Библию, поддерживают друг друга и учатся служить.\n\n"
         "Наша цель — помочь человеку найти близкое окружение и стать частью живого сообщества.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Найти церковь", callback_data="churches")],[InlineKeyboardButton(text="⬅️ На главную", callback_data="home")]]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Найти церковь", callback_data="churches")],
+            [InlineKeyboardButton(text="⬅️ На главную", callback_data="home")],
+        ]),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -178,11 +129,7 @@ async def show_churches(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "districts")
 async def show_districts(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "📍 <b>Выберите район</b>",
-        reply_markup=district_keyboard(),
-        parse_mode="HTML",
-    )
+    await callback.message.edit_text("📍 <b>Выберите район</b>", reply_markup=district_keyboard(), parse_mode="HTML")
     await callback.answer()
 
 
@@ -195,7 +142,10 @@ async def district_filter(callback: types.CallbackQuery):
         keyboard = churches_keyboard(selected)
     else:
         text = f"📍 <b>{district}</b>\n\nПока здесь нет домашних церквей в тестовой базе."
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Выбрать другой район", callback_data="districts")],[InlineKeyboardButton(text="⬅️ На главную", callback_data="home")]])
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Выбрать другой район", callback_data="districts")],
+            [InlineKeyboardButton(text="⬅️ На главную", callback_data="home")],
+        ])
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
@@ -238,13 +188,14 @@ async def join_church(callback: types.CallbackQuery):
 
 
 async def health(_request):
-    return web.json_response({"status": "ok", "service": "home-church-bot"})
+    return web.json_response({"status": "ok", "service": "home-church-bot", "mini_app": bool(PUBLIC_URL)})
 
 
-async def run_health_server():
+async def run_web_server():
     app = web.Application()
     app.router.add_get("/", health)
     app.router.add_get("/health", health)
+    register_webapp_routes(app)
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.getenv("PORT", "10000"))
@@ -260,7 +211,7 @@ async def run_bot():
 
 
 async def main():
-    await asyncio.gather(run_health_server(), run_bot())
+    await asyncio.gather(run_web_server(), run_bot())
 
 
 if __name__ == "__main__":
